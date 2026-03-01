@@ -1,0 +1,143 @@
+name: Build and publish blst binaries
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and publish (defaults to current ref tag)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.asset_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset_name: linux-x86_64
+            cmake_args: ''
+          - os: ubuntu-latest
+            asset_name: linux-aarch64
+            cmake_args: '-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++'
+          - os: macos-13
+            asset_name: macos-x86_64
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
+          - os: macos-14
+            asset_name: macos-arm64
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES=arm64'
+          - os: windows-latest
+            asset_name: windows-x86_64
+            cmake_args: ''
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [ -z "${TAG}" ]; then
+            echo "Unable to resolve tag"
+            exit 1
+          fi
+
+          echo "value=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using tag ${TAG}"
+
+      - name: Checkout repository at tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ steps.tag.outputs.value }}
+
+      - name: Install Linux aarch64 cross compiler
+        if: matrix.asset_name == 'linux-aarch64'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          find build -type f \( \
+            -name 'libblst.a' -o \
+            -name 'libblst.so' -o \
+            -name 'libblst.dylib' -o \
+            -name 'blst.lib' -o \
+            -name 'blst.dll' -o \
+            -name 'libblst.lib' \
+          \) -exec cp {} dist/ \;
+
+          if [ "$(find dist -type f | wc -l)" -eq 0 ]; then
+            echo "No build artifacts found in build directory"
+            exit 1
+          fi
+
+          ARCHIVE="blst-${{ steps.tag.outputs.value }}-${{ matrix.asset_name }}.tar.gz"
+          tar -czf "${ARCHIVE}" -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blst-${{ matrix.asset_name }}
+          path: blst-${{ steps.tag.outputs.value }}-${{ matrix.asset_name }}.tar.gz
+
+  release:
+    name: Publish GitHub Release assets
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [ -z "${TAG}" ]; then
+            echo "Unable to resolve tag"
+            exit 1
+          fi
+
+          echo "value=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: blst-*
+          merge-multiple: true
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.value }}
+          files: artifacts/*.tar.gz
+          generate_release_notes: true
