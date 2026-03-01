@@ -1,0 +1,121 @@
+name: Build and publish blst binaries
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'blst tag to build (defaults to repository tag)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.asset_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset_name: linux-x86_64
+            shell: bash
+            cmake_args: ''
+          - os: ubuntu-latest
+            asset_name: linux-aarch64
+            shell: bash
+            cmake_args: '-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64'
+          - os: macos-13
+            asset_name: macos-x86_64
+            shell: bash
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
+          - os: macos-14
+            asset_name: macos-arm64
+            shell: bash
+            cmake_args: '-DCMAKE_OSX_ARCHITECTURES=arm64'
+          - os: windows-latest
+            asset_name: windows-x86_64
+            shell: bash
+            cmake_args: ''
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using tag: ${TAG}"
+
+      - name: Checkout blst
+        shell: ${{ matrix.shell }}
+        run: |
+          git clone --depth 1 --branch "${{ steps.tag.outputs.tag }}" https://github.com/supranational/blst.git blst
+
+      - name: Install Linux cross compiler
+        if: startsWith(matrix.asset_name, 'linux-aarch64')
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure and build
+        shell: ${{ matrix.shell }}
+        run: |
+          cmake -S blst -B blst/build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
+          cmake --build blst/build --config Release --parallel
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          find blst/build -type f \( -name 'libblst.a' -o -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.lib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
+          if [ "$(find dist -type f | wc -l)" -eq 0 ]; then
+            echo "No build artifacts found"
+            exit 1
+          fi
+          tar -czf "blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.tar.gz" -C dist .
+
+      - name: Upload per-target artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blst-${{ matrix.asset_name }}
+          path: blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.tar.gz
+
+  release:
+    name: Publish GitHub Release assets
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: blst-*
+          merge-multiple: true
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: artifacts/*.tar.gz
+          generate_release_notes: true
