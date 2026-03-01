@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'blst tag to build (defaults to repository tag)'
+        description: 'blst tag to build (required when manually dispatched from a branch)'
         required: false
         type: string
 
@@ -24,24 +24,29 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_name: linux-x86_64
-            shell: bash
             cmake_args: ''
+            cc: ''
+            cxx: ''
           - os: ubuntu-latest
             asset_name: linux-aarch64
-            shell: bash
             cmake_args: '-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64'
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
           - os: macos-13
             asset_name: macos-x86_64
-            shell: bash
             cmake_args: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
+            cc: ''
+            cxx: ''
           - os: macos-14
             asset_name: macos-arm64
-            shell: bash
             cmake_args: '-DCMAKE_OSX_ARCHITECTURES=arm64'
+            cc: ''
+            cxx: ''
           - os: windows-latest
             asset_name: windows-x86_64
-            shell: bash
             cmake_args: ''
+            cc: ''
+            cxx: ''
 
     steps:
       - name: Resolve tag
@@ -50,14 +55,17 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             TAG="${{ github.event.inputs.tag }}"
-          else
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
+          else
+            echo "A tag must be provided for workflow_dispatch runs triggered from branches."
+            exit 1
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using tag: ${TAG}"
 
       - name: Checkout blst
-        shell: ${{ matrix.shell }}
+        shell: bash
         run: |
           git clone --depth 1 --branch "${{ steps.tag.outputs.tag }}" https://github.com/supranational/blst.git blst
 
@@ -69,7 +77,10 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Configure and build
-        shell: ${{ matrix.shell }}
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
         run: |
           cmake -S blst -B blst/build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
           cmake --build blst/build --config Release --parallel
@@ -90,6 +101,7 @@ jobs:
         with:
           name: blst-${{ matrix.asset_name }}
           path: blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.tar.gz
+          if-no-files-found: error
 
   release:
     name: Publish GitHub Release assets
@@ -98,11 +110,15 @@ jobs:
     steps:
       - name: Resolve tag
         id: tag
+        shell: bash
         run: |
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             TAG="${{ github.event.inputs.tag }}"
-          else
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
+          else
+            echo "A tag must be provided for workflow_dispatch runs triggered from branches."
+            exit 1
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
