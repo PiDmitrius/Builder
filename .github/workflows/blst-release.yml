@@ -2,8 +2,13 @@ name: Build and publish blst binaries
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - '*'
+  pull_request:
+    branches:
+      - '**'
   workflow_dispatch:
     inputs:
       tag:
@@ -58,8 +63,7 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            echo "A tag must be provided for workflow_dispatch runs triggered from branches."
-            exit 1
+            TAG="snapshot-${GITHUB_SHA::7}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using tag: ${TAG}"
@@ -106,6 +110,7 @@ jobs:
   release:
     name: Publish GitHub Release assets
     needs: build
+    if: github.ref_type == 'tag' || github.event.inputs.tag != ''
     runs-on: ubuntu-latest
     steps:
       - name: Resolve tag
