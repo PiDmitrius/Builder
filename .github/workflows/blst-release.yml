@@ -12,12 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'blst tag to build (required when manually dispatched from a branch)'
+        description: 'blst tag to build (defaults to v0.3.15 when omitted)'
         required: false
         type: string
 
 permissions:
   contents: write
+
+env:
+  DEFAULT_BLST_TAG: v0.3.15
 
 jobs:
   build:
@@ -63,7 +66,7 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="snapshot-${GITHUB_SHA::7}"
+            TAG="${DEFAULT_BLST_TAG}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using tag: ${TAG}"
@@ -110,7 +113,7 @@ jobs:
   release:
     name: Publish GitHub Release assets
     needs: build
-    if: github.ref_type == 'tag' || github.event.inputs.tag != ''
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve tag
@@ -122,8 +125,7 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            echo "A tag must be provided for workflow_dispatch runs triggered from branches."
-            exit 1
+            TAG="${DEFAULT_BLST_TAG}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
