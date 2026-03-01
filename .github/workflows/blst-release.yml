@@ -45,6 +45,11 @@ jobs:
           - os: windows-latest
             asset_name: windows-x86_64
             cross_compile: ''
+            msvc_arch: x64
+          - os: windows-latest
+            asset_name: windows-arm64
+            cross_compile: ''
+            msvc_arch: amd64_arm64
 
     steps:
       - name: Resolve tag
@@ -87,6 +92,8 @@ jobs:
       - name: Set up MSVC developer command prompt
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Build blst (Windows)
         if: runner.os == 'Windows'
