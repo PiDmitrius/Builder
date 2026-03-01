@@ -2,17 +2,25 @@ name: Build and publish blst binaries
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - '*'
+  pull_request:
+    branches:
+      - '**'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'blst tag to build (required when manually dispatched from a branch)'
+        description: 'blst tag to build (defaults to v0.3.15 when omitted)'
         required: false
         type: string
 
 permissions:
   contents: write
+
+env:
+  DEFAULT_BLST_TAG: v0.3.15
 
 jobs:
   build:
@@ -24,29 +32,24 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_name: linux-x86_64
-            cmake_args: ''
-            cc: ''
-            cxx: ''
+            cross_compile: ''
           - os: ubuntu-latest
             asset_name: linux-aarch64
-            cmake_args: '-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64'
-            cc: aarch64-linux-gnu-gcc
-            cxx: aarch64-linux-gnu-g++
-          - os: macos-13
+            cross_compile: aarch64-linux-gnu-
+          - os: macos-15-intel
             asset_name: macos-x86_64
-            cmake_args: '-DCMAKE_OSX_ARCHITECTURES=x86_64'
-            cc: ''
-            cxx: ''
+            cross_compile: ''
           - os: macos-14
             asset_name: macos-arm64
-            cmake_args: '-DCMAKE_OSX_ARCHITECTURES=arm64'
-            cc: ''
-            cxx: ''
+            cross_compile: ''
           - os: windows-latest
             asset_name: windows-x86_64
-            cmake_args: ''
-            cc: ''
-            cxx: ''
+            cross_compile: ''
+            msvc_arch: x64
+          - os: windows-latest
+            asset_name: windows-arm64
+            cross_compile: ''
+            msvc_arch: amd64_arm64
 
     steps:
       - name: Resolve tag
@@ -58,8 +61,7 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            echo "A tag must be provided for workflow_dispatch runs triggered from branches."
-            exit 1
+            TAG="${DEFAULT_BLST_TAG}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Using tag: ${TAG}"
@@ -70,26 +72,40 @@ jobs:
           git clone --depth 1 --branch "${{ steps.tag.outputs.tag }}" https://github.com/supranational/blst.git blst
 
       - name: Install Linux cross compiler
-        if: startsWith(matrix.asset_name, 'linux-aarch64')
+        if: matrix.cross_compile != ''
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - name: Configure and build
+      - name: Build blst (Unix)
+        if: runner.os != 'Windows'
         shell: bash
-        env:
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
+        working-directory: blst
         run: |
-          cmake -S blst -B blst/build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_args }}
-          cmake --build blst/build --config Release --parallel
+          if [ -n "${{ matrix.cross_compile }}" ]; then
+            CROSS_COMPILE="${{ matrix.cross_compile }}" ./build.sh
+          else
+            ./build.sh
+          fi
+
+      - name: Set up MSVC developer command prompt
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Build blst (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        working-directory: blst
+        run: build.bat
 
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p dist
-          find blst/build -type f \( -name 'libblst.a' -o -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.lib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
+          find blst -maxdepth 1 -type f \( -name 'libblst.a' -o -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.lib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
           if [ "$(find dist -type f | wc -l)" -eq 0 ]; then
             echo "No build artifacts found"
             exit 1
@@ -106,6 +122,7 @@ jobs:
   release:
     name: Publish GitHub Release assets
     needs: build
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve tag
@@ -117,8 +134,7 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            echo "A tag must be provided for workflow_dispatch runs triggered from branches."
-            exit 1
+            TAG="${DEFAULT_BLST_TAG}"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
