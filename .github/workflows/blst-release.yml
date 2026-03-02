@@ -30,6 +30,8 @@ jobs:
   build:
     name: Build (${{ matrix.asset_name }})
     runs-on: ${{ matrix.os }}
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,20 +131,6 @@ jobs:
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '')
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve tag
-        id: tag
-        shell: bash
-        run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
-            TAG="${GITHUB_REF_NAME}"
-          else
-            echo "Release job requires an explicit workflow_dispatch tag or a tag ref."
-            exit 1
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -153,7 +141,7 @@ jobs:
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ needs.build.outputs.tag }}
           files: artifacts/*.tar.gz
           generate_release_notes: true
           overwrite_files: true
