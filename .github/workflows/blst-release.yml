@@ -19,10 +19,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: blst-release-${{ github.event_name }}-${{ github.ref || github.run_id }}
-  cancel-in-progress: true
-
 env:
   DEFAULT_BLST_TAG: v0.3.15
 
@@ -30,26 +26,24 @@ jobs:
   build:
     name: Build (${{ matrix.asset_name }})
     runs-on: ${{ matrix.os }}
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: linux-amd64
+            asset_name: linux-x86_64
             cross_compile: ''
           - os: ubuntu-latest
-            asset_name: linux-arm64
+            asset_name: linux-aarch64
             cross_compile: aarch64-linux-gnu-
           - os: macos-15-intel
-            asset_name: macos-amd64
+            asset_name: macos-x86_64
             cross_compile: ''
           - os: macos-14
             asset_name: macos-arm64
             cross_compile: ''
           - os: windows-latest
-            asset_name: windows-amd64
+            asset_name: windows-x86_64
             cross_compile: ''
             msvc_arch: x64
           - os: windows-latest
@@ -128,9 +122,22 @@ jobs:
   release:
     name: Publish GitHub Release assets
     needs: build
-    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '')
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${DEFAULT_BLST_TAG}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -141,7 +148,7 @@ jobs:
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
+          tag_name: ${{ steps.tag.outputs.tag }}
           files: artifacts/*.tar.gz
           generate_release_notes: true
           overwrite_files: true
