@@ -35,19 +35,19 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: linux-x86_64
+            asset_name: linux-amd64
             cross_compile: ''
           - os: ubuntu-latest
-            asset_name: linux-aarch64
+            asset_name: linux-arm64
             cross_compile: aarch64-linux-gnu-
           - os: macos-15-intel
-            asset_name: macos-x86_64
+            asset_name: macos-amd64
             cross_compile: ''
           - os: macos-14
             asset_name: macos-arm64
             cross_compile: ''
           - os: windows-latest
-            asset_name: windows-x86_64
+            asset_name: windows-amd64
             cross_compile: ''
             msvc_arch: x64
           - os: windows-latest
