@@ -156,3 +156,4 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           files: artifacts/*.tar.gz
           generate_release_notes: true
+          overwrite_files: true
