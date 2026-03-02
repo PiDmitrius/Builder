@@ -88,9 +88,9 @@ jobs:
         working-directory: blst
         run: |
           if [ -n "${{ matrix.cross_compile }}" ]; then
-            CROSS_COMPILE="${{ matrix.cross_compile }}" ./build.sh
+            CROSS_COMPILE="${{ matrix.cross_compile }}" ./build.sh -shared
           else
-            ./build.sh
+            ./build.sh -shared
           fi
 
       - name: Set up MSVC developer command prompt
@@ -103,13 +103,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         working-directory: blst
-        run: build.bat
+        run: build.bat -dll
 
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p dist
-          find blst -maxdepth 1 -type f \( -name 'libblst.a' -o -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.lib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
+          find blst -maxdepth 1 -type f \( -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
           if [ "$(find dist -type f | wc -l)" -eq 0 ]; then
             echo "No build artifacts found"
             exit 1
