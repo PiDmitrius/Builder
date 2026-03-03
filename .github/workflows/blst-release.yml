@@ -105,18 +105,40 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          find blst -maxdepth 1 -type f \( -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
+          while IFS= read -r lib_path; do
+            lib_name="$(basename "$lib_path")"
+            case "$lib_name" in
+              libblst.so)
+                out_name="blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.so"
+                ;;
+              libblst.dylib)
+                out_name="blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.dylib"
+                ;;
+              blst.dll)
+                out_name="blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.dll"
+                ;;
+              *)
+                echo "Skipping unexpected artifact: $lib_name"
+                continue
+                ;;
+            esac
+
+            cp "$lib_path" "dist/$out_name"
+          done < <(find blst -maxdepth 1 -type f \( -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.dll' \))
+
           if [ "$(find dist -type f | wc -l)" -eq 0 ]; then
             echo "No build artifacts found"
             exit 1
           fi
-          tar -czf "blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.tar.gz" -C dist .
+
+          echo "Prepared artifacts:"
+          find dist -maxdepth 1 -type f -printf '  %f\n'
 
       - name: Upload per-target artifact
         uses: actions/upload-artifact@v4
         with:
           name: blst-${{ matrix.asset_name }}
-          path: blst-${{ steps.tag.outputs.tag }}-${{ matrix.asset_name }}.tar.gz
+          path: dist/*
           if-no-files-found: error
 
   release:
@@ -149,6 +171,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          files: artifacts/*.tar.gz
+          files: artifacts/*
           generate_release_notes: true
           overwrite_files: true
