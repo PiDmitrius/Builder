@@ -31,21 +31,21 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: linux-x86_64
+            asset_name: linux-amd64
             cross_compile: ''
           - os: ubuntu-latest
-            asset_name: linux-aarch64
+            asset_name: linux-arm64
             cross_compile: aarch64-linux-gnu-
           - os: macos-15-intel
-            asset_name: macos-x86_64
+            asset_name: macos-amd64
             cross_compile: ''
           - os: macos-14
             asset_name: macos-arm64
             cross_compile: ''
           - os: windows-latest
-            asset_name: windows-x86_64
+            asset_name: windows-amd64
             cross_compile: ''
-            msvc_arch: x64
+            msvc_arch: amd64
           - os: windows-latest
             asset_name: windows-arm64
             cross_compile: ''
@@ -84,9 +84,9 @@ jobs:
         working-directory: blst
         run: |
           if [ -n "${{ matrix.cross_compile }}" ]; then
-            CROSS_COMPILE="${{ matrix.cross_compile }}" ./build.sh
+            CROSS_COMPILE="${{ matrix.cross_compile }}" ./build.sh -shared
           else
-            ./build.sh
+            ./build.sh -shared
           fi
 
       - name: Set up MSVC developer command prompt
@@ -99,13 +99,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         working-directory: blst
-        run: build.bat
+        run: build.bat -dll
 
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p dist
-          find blst -maxdepth 1 -type f \( -name 'libblst.a' -o -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.lib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
+          find blst -maxdepth 1 -type f \( -name 'libblst.so' -o -name 'libblst.dylib' -o -name 'blst.dll' \) -exec cp {} dist/ \;
           if [ "$(find dist -type f | wc -l)" -eq 0 ]; then
             echo "No build artifacts found"
             exit 1
@@ -151,3 +151,4 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           files: artifacts/*.tar.gz
           generate_release_notes: true
+          overwrite_files: true
