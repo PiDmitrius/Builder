@@ -85,6 +85,14 @@ jobs:
         run: |
           if [ -n "${{ matrix.cross_compile }}" ]; then
             CROSS_COMPILE="${{ matrix.cross_compile }}" ./build.sh -shared
+          elif [ "$(uname -s)" = "Darwin" ]; then
+            # build.sh -shared has a bug on macOS: the dylib linker runs in a
+            # subshell "(...);" followed by "exit 0", so POSIX sh set -e does
+            # not propagate a linker failure and the script exits 0 with no
+            # dylib produced. Build the static lib first, then link explicitly.
+            ./build.sh
+            cc -dynamiclib -o libblst.dylib -Wl,-force_load,libblst.a \
+              -O2 -fno-builtin -fPIC
           else
             ./build.sh -shared
           fi
